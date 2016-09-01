@@ -1,9 +1,8 @@
 #ifndef CRYPTOPP_GFPCRYPT_H
 #define CRYPTOPP_GFPCRYPT_H
 
-/** \file
-	Implementation of schemes based on DL over GF(p)
-*/
+//! \file gfpcrypt.h
+//! \brief Implementation of schemes based on DL over GF(p)
 
 #include "config.h"
 
@@ -180,7 +179,10 @@ protected:
 	unsigned int GetDefaultSubgroupOrderSize(unsigned int modulusSize) const {return modulusSize-1;}
 };
 
-//! GDSA algorithm
+//! \class DL_Algorithm_GDSA
+//! \brief Generalized DSA algorithm
+//! \tparam T Field element
+//! \details DL_Algorithm_GDSA() uses IEEE's P1363 algorithm, and StaticAlgorithmName() returns the string "DSA-1363".
 template <class T>
 class DL_Algorithm_GDSA : public DL_ElgamalLikeSignatureAlgorithm<T>
 {
@@ -214,7 +216,12 @@ public:
 	}
 };
 
-//! GDSA algorithm
+//! \class DL_Algorithm_DSA_RFC6979
+//! \brief DSA algorithm providing determinisitic signatures
+//! \tparam T Field element
+//! \tparam H Hash function
+//! \detailsDL_Algorithm_DSA_RFC6979() uses IETF's algorithm, and StaticAlgorithmName() returns the string "DSA-RFC6979".
+//! \sa <A HREF="http://tools.ietf.org/html/rfc6979">RFC 6979, Deterministic Usage of the Digital Signature Algorithm (DSA) and Elliptic Curve Digital Signature Algorithm (ECDSA)</A>
 template <class T, class H>
 class DL_Algorithm_DSA_RFC6979 : public DL_ElgamalLikeSignatureAlgorithm<T>
 {
@@ -247,137 +254,83 @@ public:
 		return r == params.ConvertElementToInteger(publicKey.CascadeExponentiateBaseAndPublicElement(u1, u2)) % q;
 	}
 
-	// Creates a k-value based on RFC 6979. Uses the message to hash and its size,
-	// the curve order and its bit length, and a private key. Returns true to
-	// indicate that the returned k-value is valid.
-	const bool getDetKVal(const byte* hmsg, const size_t& hmsgSize,
-	                      const Integer& cord, const size_t& cordBits,
-	                      const Integer& pk, Integer& kVal) const
+	bool IsProbabilistic() const
 	{
-		// After doing the initial setup, get the msg hash and work towards the final
-		// k value, per the spec.
-		SecByteBlock zeroByte(1);
-		SecByteBlock oneByte(1);
-		memset(zeroByte, '\x00', 1);
-		memset(oneByte, '\x01', 1);
-
-		size_t cordBytes = (cordBits + 7) / 8;
-		SecByteBlock hkey(H::DIGESTSIZE);
-		memset(hkey, '\x00', H::DIGESTSIZE);
-		K.SetKey(hkey, hkey.size());
-		SecByteBlock msgHash(K.DIGESTSIZE);
-		SecByteBlock V(K.DIGESTSIZE);
-		SecByteBlock prvKeyBlock = int2octets(pk, (const unsigned int)cordBytes);
-		memset(V, '\x01', K.DIGESTSIZE);
-		hashFunct.CalculateDigest(msgHash, hmsg, hmsgSize);
-
-		SecByteBlock octetMsg = bits2octets(msgHash, cord, cordBits);
-		SecByteBlock hmacInput1 = V + zeroByte + prvKeyBlock + octetMsg;
-		K.CalculateDigest(hkey, hmacInput1, hmacInput1.size());
-
-		K.SetKey(hkey, hkey.size());
-		K.CalculateDigest(V, V, V.size());
-
-		SecByteBlock hmacInput2 = V + oneByte + prvKeyBlock + octetMsg;
-		K.CalculateDigest(hkey, hmacInput2, hmacInput2.size());
-
-		K.SetKey(hkey, hkey.size());
-		K.CalculateDigest(V, V, V.size());
-
-		Integer retVal;
-		for(bool done = false; done != true; )
-		{
-			SecByteBlock b2iData;
-			for(size_t s = 0; s < cordBytes; s += hkey.size())
-			{
-				K.CalculateDigest(V, V, V.size());
-				b2iData += V;
-			}
-
-			// Odds of failure are practically nil but we must play it safe.
-			Integer b2i = bits2int(b2iData, (const unsigned int)cordBits);
-			if(b2i >= Integer::One() && b2i < cord)
-			{
-				retVal = b2i;
-				done = true;
-			}
-			else
-			{
-				SecByteBlock newHMACInput = V + zeroByte;
-				K.CalculateDigest(hkey, newHMACInput, newHMACInput.size());
-
-				K.SetKey(hkey, hkey.size());
-				K.CalculateDigest(V, V, V.size());
-			}
-		}
-		// Before running the k-val, hash & HMAC functs need to be cleared.
-		// CalculateDigest() does this every time, though, so we're good.
-		kVal = retVal;
-		return true;
+		return false;
 	}
 
-protected:
-	// RFC 6979 support function. Takes a set of bits, takes the most significant
-	// bytes (subject to a given bit limit), and turns them into an integer.
-	Integer bits2int(const SecByteBlock& bits, const unsigned int qlen) const
+	void ComputeK(RandomNumberGenerator &rng, const DL_GroupParameters<T> &params, const Integer &x, const byte* encodedMsg, size_t encodedMsgLen, Integer &k) const
 	{
-		Integer retVal(bits, bits.size());
-		if((retVal.ByteCount() * 8) > qlen)
-		{
-			retVal >>= ((retVal.ByteCount() * 8) - qlen);
-		}
+		// Private key as a byte array
+		SecByteBlock t(x.MinEncodedSize());
+		x.Encode(t.begin(), t.size());
 
-		return retVal;
+		// Step (a)
+		SecByteBlock h1(H::DIGESTSIZE);
+		m_hash.Update(encodedMsg, encodedMsgLen);
+		m_hash.TruncatedFinal(h1, h1.size());
+
+		// Step (b) and (c)
+		static const SecByteBlock KK = CreateK();	// Create once
+		static const SecByteBlock VV = CreateV();	// Create once
+		static const byte zero[1] = { 0x00 };
+		static const byte one[1] = { 0x01 };
+
+		SecByteBlock K(HMAC<H>::DIGESTSIZE);
+		SecByteBlock V(HMAC<H>::DIGESTSIZE);
+
+		// Step (d)
+		m_hmac.SetKey(KK.begin(), KK.size());
+		m_hmac.Update(VV, VV.size());
+		m_hmac.Update(zero, 1);
+		m_hmac.Update(t.begin(), t.size());
+		m_hmac.Update(encodedMsg, encodedMsgLen);
+		m_hmac.TruncatedFinal(K.begin(), K.size());
+
+		// Step (e)
+		m_hmac.SetKey(K.begin(), K.size());
+		m_hmac.Update(VV, VV.size());
+		m_hmac.TruncatedFinal(V.begin(), V.size());
+
+		// Step (f)
+		m_hmac.SetKey(K.begin(), K.size());
+		m_hmac.Update(V, V.size());
+		m_hmac.Update(one, 1);
+		m_hmac.Update(t.begin(), t.size());
+		m_hmac.Update(encodedMsg, encodedMsgLen);
+		m_hmac.TruncatedFinal(K.begin(), K.size());
+
+		// Step (g)
+		m_hmac.SetKey(K.begin(), K.size());
+		m_hmac.Update(V, V.size());
+		m_hmac.TruncatedFinal(V.begin(), V.size());
+
+		// TODO: Step (h)
+		Integer r(V.begin(), V.size());
+		const size_t shift = SaturatingSubtract(m_hmac.DigestSize()*8, params.GetSubgroupOrder().BitCount());
+		if (shift)
+			r >>= shift;
+
+		r.swap(k);
 	}
 
-	// RFC 6979 support function. Takes an integer and converts it into bytes that
-	// are the same length as an elliptic curve's order.
-	SecByteBlock int2octets(const Integer& val, const unsigned int rlenBytes) const
+	SecByteBlock CreateK() const
 	{
-		SecByteBlock octetBlock(val.ByteCount());
-		val.Encode(octetBlock, val.ByteCount());
-		SecByteBlock retVal = octetBlock;
-
-		// The least significant bytes are the ones we need to preserve.
-		if(octetBlock.size() > rlenBytes)
-		{
-			SecByteBlock octetBlock1(rlenBytes);
-			size_t offset = octetBlock.size() - rlenBytes;
-			memcpy(octetBlock1, octetBlock + offset, rlenBytes);
-			retVal = octetBlock1;
-		}
-		else if(octetBlock.size() < rlenBytes)
-		{
-			SecByteBlock octetBlock2(rlenBytes);
-			memset(octetBlock2, '\x00', rlenBytes);
-			size_t offset = rlenBytes - octetBlock.size();
-			memcpy(octetBlock2 + offset, octetBlock, rlenBytes - offset);
-			retVal = octetBlock2;
-		}
-
-		return retVal;
+		SecByteBlock K(HMAC<H>::DIGESTSIZE);
+		std::fill(K.begin(), K.end(), byte(0x00));
+		return K;
 	}
 
-	// Turn a stream of bits into a set of bytes with the same length as an elliptic
-	// curve's order.
-	SecByteBlock bits2octets(const SecByteBlock& inData, const Integer& curveOrder,
-	                        const size_t& curveOrderNumBits) const
+	SecByteBlock CreateV() const
 	{
-		Integer bintTemp = bits2int(inData, (const unsigned int)curveOrderNumBits);
-		Integer bint = bintTemp - curveOrder;
-		return int2octets(bint.IsNegative() ? bintTemp : bint,
-		                  curveOrder.ByteCount());
+		SecByteBlock V(HMAC<H>::DIGESTSIZE);
+		std::fill(V.begin(), V.end(), byte(0x01));
+		return V;
 	}
 
-	// Get() returns const ref
-	const H& GetHash() const { return const_cast<const H&>(hashFunct); }
-	const HMAC<H>& GetHMAC() const { return const_cast<const HMAC<H>&>(K); }
-	// Access() returns non-const ref
-	H& AccessHash() { return hashFunct; }
-	HMAC<H>& AccessHMAC() { return K; }
 private:
-	mutable H hashFunct;
-	mutable HMAC<H> K;
+	mutable H m_hash;
+	mutable HMAC<H> m_hmac;
 };
 
 CRYPTOPP_DLL_TEMPLATE_CLASS DL_Algorithm_GDSA<Integer>;
@@ -438,7 +391,8 @@ public:
 		{this->GetPublicElement().DEREncode(bt);}
 };
 
-//! DL private key (in GF(p) groups)
+//! \brief Discrete logprivate key in GF(p) groups
+//! \tparam GP Group parameters
 template <class GP>
 class DL_PrivateKey_GFP : public DL_PrivateKeyImpl<GP>
 {
@@ -462,7 +416,7 @@ public:
 		{this->AccessGroupParameters().Initialize(p, q, g); this->SetPrivateExponent(x);}
 };
 
-//! DL signing/verification keys (in GF(p) groups)
+//! \brief Discrete log signing/verification keys in GF(p) groups
 struct DL_SignatureKeys_GFP
 {
 	typedef DL_GroupParameters_GFP GroupParameters;
@@ -474,7 +428,7 @@ struct DL_SignatureKeys_GFP
 #endif
 };
 
-//! DL encryption/decryption keys (in GF(p) groups)
+//! \brief Discrete log encryption/decryption keys in GF(p) groups
 struct DL_CryptoKeys_GFP
 {
 	typedef DL_GroupParameters_GFP_DefaultSafePrime GroupParameters;
@@ -576,7 +530,9 @@ public:
 	}
 };
 
-//! <a href="http://www.weidai.com/scan-mirror/sig.html#DSA-1363">DSA-1363</a>
+//! \class GDSA
+//! \brief Generalized DSA signature scheme
+//! \sa <a href="http://www.weidai.com/scan-mirror/sig.html#DSA-1363">DSA-1363</a>
 template <class H>
 struct GDSA : public DL_SS<
 	DL_SignatureKeys_GFP,
@@ -589,7 +545,9 @@ struct GDSA : public DL_SS<
 #endif
 };
 
-//! <a href="http://tools.ietf.org/rfc/rfc6979.txt">Deterministic Usage of the Digital Signature Algorithm (DSA) and Elliptic Curve Digital Signature Algorithm (ECDSA)</a>
+//! \class DSA_RFC6979
+//! \brief DSA deterministic signature scheme
+//! \sa <a href="http://tools.ietf.org/rfc/rfc6979.txt">Deterministic Usage of the Digital Signature Algorithm (DSA) and Elliptic Curve Digital Signature Algorithm (ECDSA)</a>
 template <class H>
 struct DSA_RFC6979 : public DL_SS<
 	DL_SignatureKeys_GFP,
@@ -602,7 +560,9 @@ struct DSA_RFC6979 : public DL_SS<
 #endif
 };
 
-//! <a href="http://www.weidai.com/scan-mirror/sig.html#NR">NR</a>
+//! \class NR
+//! \brief Nyberg–Rueppel signature scheme
+//! \sa <a href="http://www.weidai.com/scan-mirror/sig.html#NR">NR</a>
 template <class H>
 struct NR : public DL_SS<
 	DL_SignatureKeys_GFP,
@@ -687,7 +647,7 @@ template <class H>
 class DSA2_RFC6979 : public DL_SS<
 	DL_Keys_DSA_RFC6979,
 	DL_Algorithm_DSA_RFC6979<Integer, H>,
-	DL_SignatureMessageEncodingMethod_DSA,
+	DL_SignatureMessageEncodingMethod_RFC6979,
 	H,
 	DSA2_RFC6979<H> >
 {

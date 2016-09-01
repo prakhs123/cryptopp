@@ -240,8 +240,17 @@ struct DL_Keys_ECDSA
 #endif
 };
 
-template <class EC, class H>
-struct ECDSA_RFC6979;
+//! ECDSA-RFC6979 keys
+template <class EC>
+struct DL_Keys_ECDSA_RFC6979
+{
+	typedef DL_PublicKey_EC<EC> PublicKey;
+	typedef DL_PrivateKey_EC<EC> PrivateKey;
+
+#ifndef CRYPTOPP_MAINTAIN_BACKWARDS_COMPATIBILITY_562
+	virtual ~DL_Keys_ECDSA_RFC6979() {}
+#endif
+};
 
 //! ECDSA algorithm
 template <class EC>
@@ -290,7 +299,11 @@ struct ECDSA : public DL_SS<DL_Keys_ECDSA<EC>, DL_Algorithm_ECDSA<EC>, DL_Signat
 
 //! <a href="http://tools.ietf.org/rfc/rfc6979.txt">Deterministic Usage of the Digital Signature Algorithm (DSA) and Elliptic Curve Digital Signature Algorithm (ECDSA)</a>
 template <class EC, class H>
-struct ECDSA_RFC6979 : public DL_SS<DL_Keys_ECDSA<EC>, DL_Algorithm_ECDSA_RFC6979<EC, H>, DL_SignatureMessageEncodingMethod_DSA, H>
+struct ECDSA_RFC6979 : public DL_SS<
+	DL_Keys_ECDSA_RFC6979<EC>,
+	DL_Algorithm_ECDSA_RFC6979<EC, H>,
+	DL_SignatureMessageEncodingMethod_RFC6979,
+	H>
 {
 #ifndef CRYPTOPP_MAINTAIN_BACKWARDS_COMPATIBILITY_562
 	virtual ~ECDSA_RFC6979() {}

@@ -52,9 +52,6 @@
 #include "smartptr.h"
 #include "stdcpp.h"
 
-// VC60 workaround: this macro is defined in shlobj.h and conflicts with a template parameter used in this file
-#undef INTERFACE
-
 NAMESPACE_BEGIN(CryptoPP)
 
 //! \class TrapdoorFunctionBounds
@@ -275,10 +272,10 @@ public:
 
 //! \class TF_CryptoSystemBase
 //! \brief Trapdoor function cryptosystem base class
-//! \tparam INTERFACE public key cryptosystem base interface
+//! \tparam INTF public key cryptosystem base interface
 //! \tparam BASE public key cryptosystem implementation base
-template <class INTERFACE, class BASE>
-class CRYPTOPP_NO_VTABLE TF_CryptoSystemBase : public PK_FixedLengthCryptoSystemImpl<INTERFACE>, protected BASE
+template <class INTF, class BASE>
+class CRYPTOPP_NO_VTABLE TF_CryptoSystemBase : public PK_FixedLengthCryptoSystemImpl<INTF>, protected BASE
 {
 public:
 #ifndef CRYPTOPP_MAINTAIN_BACKWARDS_COMPATIBILITY_562
@@ -339,7 +336,7 @@ public:
 	virtual size_t MaxRecoverableLength(size_t representativeBitLength, size_t hashIdentifierLength, size_t digestLength) const
 		{CRYPTOPP_UNUSED(representativeBitLength); CRYPTOPP_UNUSED(representativeBitLength); CRYPTOPP_UNUSED(hashIdentifierLength); CRYPTOPP_UNUSED(digestLength); return 0;}
 
-	bool IsProbabilistic() const
+	virtual bool IsProbabilistic() const
 		{return true;}
 	bool AllowNonrecoverablePart() const
 		{throw NotImplemented("PK_MessageEncodingMethod: this signature scheme does not support message recovery");}
@@ -438,6 +435,23 @@ public:
 		byte *representative, size_t representativeBitLength) const;
 };
 
+//! \class DL_SignatureMessageEncodingMethod_RFC6979
+//! \brief Interface for message encoding method for public key signature schemes.
+//! \details \p DL_SignatureMessageEncodingMethod_RFC6979 provides interfaces
+//!   for message encoding method for DSA and access to the complete message hash
+//!   in addition to the EMSA representation
+class CRYPTOPP_DLL DL_SignatureMessageEncodingMethod_RFC6979 : public PK_DeterministicSignatureMessageEncodingMethod
+{
+public:
+	void ComputeMessageRepresentative(RandomNumberGenerator &rng,
+		const byte *recoverableMessage, size_t recoverableMessageLength,
+		HashTransformation &hash, HashIdentifier hashIdentifier, bool messageEmpty,
+		byte *representative, size_t representativeBitLength) const;
+
+	bool IsProbabilistic() const
+		{return false;}
+};
+
 //! \class DL_SignatureMessageEncodingMethod_NR
 //! \brief Interface for message encoding method for public key signature schemes.
 //! \details \p DL_SignatureMessageEncodingMethod_NR provides interfaces
@@ -485,8 +499,8 @@ public:
 };
 
 //! _
-template <class INTERFACE, class BASE>
-class CRYPTOPP_NO_VTABLE TF_SignatureSchemeBase : public INTERFACE, protected BASE
+template <class INTF, class BASE>
+class CRYPTOPP_NO_VTABLE TF_SignatureSchemeBase : public INTF, protected BASE
 {
 public:
 #ifndef CRYPTOPP_MAINTAIN_BACKWARDS_COMPATIBILITY_562
@@ -745,7 +759,7 @@ public:
 	DL_BadElement() : InvalidDataFormat("CryptoPP: invalid group element") {}
 };
 
-//! \brief Interface for Discrete Log (DL) group parameters
+//! \brief Interface for Discrete log group parameters
 //! \tparam T element in the group
 //! \details The element is usually an Integer, \ref ECP "ECP::Point" or \ref EC2N "EC2N::Point"
 template <class T>
@@ -957,7 +971,7 @@ private:
 	mutable unsigned int m_validationLevel;
 };
 
-//! \brief Base implmentation of Discrete Log (DL) group parameters
+//! \brief Base implmentation of Discrete log group parameters
 //! \tparam GROUP_PRECOMP group precomputation class
 //! \tparam BASE_PRECOMP fixed base precomputation class
 //! \tparam BASE class or type of an element
@@ -990,8 +1004,8 @@ protected:
 	BASE_PRECOMP m_gpc;
 };
 
-//! \brief Base class for a Discrete Log (DL) key
-//! \tparam T class or type of an element
+//! \brief Base class for a discrete log key
+//! \tparam T Field element
 //! \details The element is usually an Integer, \ref ECP "ECP::Point" or \ref EC2N "EC2N::Point"
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_Key
@@ -1009,7 +1023,8 @@ public:
 	virtual DL_GroupParameters<T> & AccessAbstractGroupParameters() =0;
 };
 
-//! \brief Interface for Discrete Log (DL) public keys
+//! \brief Interface for discrete log public keys
+//! \tparam T Field element
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_PublicKey : public DL_Key<T>
 {
@@ -1048,7 +1063,8 @@ public:
 	virtual DL_FixedBasePrecomputation<T> & AccessPublicPrecomputation() =0;
 };
 
-//! \brief Interface for Discrete Log (DL) private keys
+//! \brief Interface for Discrete Log private keys
+//! \tparam T Field element
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_PrivateKey : public DL_Key<T>
 {
@@ -1100,7 +1116,10 @@ void DL_PublicKey<T>::AssignFrom(const NameValuePairs &source)
 
 class OID;
 
-//! _
+//! \brief Discrete log default key implementation
+//! \tparam PK Key type
+//! \tparam GP Group parameters
+//! \tparam OID Object identifier
 template <class PK, class GP, class O = OID>
 class DL_KeyImpl : public PK
 {
@@ -1131,7 +1150,9 @@ private:
 class X509PublicKey;
 class PKCS8PrivateKey;
 
-//! _
+//! \brief Discrete log default private Key implementation
+//! \tparam GP Group parameters
+//! \details DL_PKCS8PrivateKey() provides the PKCS8PrivateKey() interface
 template <class GP>
 class DL_PrivateKeyImpl : public DL_PrivateKey<CPP_TYPENAME GP::Element>, public DL_KeyImpl<PKCS8PrivateKey, GP>
 {
@@ -1206,7 +1227,11 @@ private:
 	Integer m_x;
 };
 
-//! _
+//! \brief Private Key implementation with pairwise consistency check
+//! \tparam GP Group parameters
+//! \details DL_PrivateKey_WithSignaturePairwiseConsistencyTest() is used with FIPS 140-2
+//!   validated cryptography during the pwer-up test to ensure the operations for random key
+//!   pairs are consistent and expected due to lack of determinism.
 template <class BASE, class SIGNATURE_SCHEME>
 class DL_PrivateKey_WithSignaturePairwiseConsistencyTest : public BASE
 {
@@ -1228,7 +1253,9 @@ public:
 	}
 };
 
-//! _
+//! \brief Default public Key implementation
+//! \tparam GP Group parameters
+//! \details DL_PublicKeyImpl() provides the X509PublicKey() interface
 template <class GP>
 class DL_PublicKeyImpl : public DL_PublicKey<typename GP::Element>, public DL_KeyImpl<X509PublicKey, GP>
 {
@@ -1294,6 +1321,7 @@ private:
 };
 
 //! \brief Interface for Elgamal-like signature algorithms
+//! \tparam T Field element
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_ElgamalLikeSignatureAlgorithm
 {
@@ -1302,20 +1330,65 @@ public:
 	virtual ~DL_ElgamalLikeSignatureAlgorithm() { }
 #endif
 
+	//! \brief Sign an encoded message
+	//! \param params Group parameters
+	//! \param privateKey Private exponent
+	//! \param k Probabilistic or deterministic k
+	//! \param e Encoded message, which is likely different than <tt>H(m)</tt>
+	//! \param r R-part of signature on encoded message <tt>e</tt>
+	//! \param s S-part of signature on encoded message <tt>e</tt>
+	//! \details Through the magic of C++ template and interface programming techniques,
+	//!   Sign() is called from DL_SignerBase::SignandRestart().
 	virtual void Sign(const DL_GroupParameters<T> &params, const Integer &privateKey, const Integer &k, const Integer &e, Integer &r, Integer &s) const =0;
+
+	//! \brief Verify an encoded message
+	//! \param params Group parameters
+	//! \param publicKey Public element
+	//! \param e Encoded message, which is likely different than <tt>H(m)</tt>
+	//! \param r R-part of signature on encoded message <tt>e</tt>
+	//! \param s S-part of signature on encoded message <tt>e</tt>
+	//! \returns true if the signature on the message is valid, false otherwise
 	virtual bool Verify(const DL_GroupParameters<T> &params, const DL_PublicKey<T> &publicKey, const Integer &e, const Integer &r, const Integer &s) const =0;
+
+	//! \brief Recover a presignature
 	virtual Integer RecoverPresignature(const DL_GroupParameters<T> &params, const DL_PublicKey<T> &publicKey, const Integer &r, const Integer &s) const
 	{
 		CRYPTOPP_UNUSED(params); CRYPTOPP_UNUSED(publicKey); CRYPTOPP_UNUSED(r); CRYPTOPP_UNUSED(s);
 		throw NotImplemented("DL_ElgamalLikeSignatureAlgorithm: this signature scheme does not support message recovery");
 	}
+
+	//! \brief Determinmine randomness of k
+	//! \returns <tt>true</tt> if <tt>k</tt> uniformly random over <tt>[1, q-1]</tt>, false otherwise
+	//! \details IsProbabilistic() was added to DL_ElgamalLikeSignatureAlgorithm() to support RFC 6979 deterministic signatures.
+	//!   All derived classes except DL_Algorithm_DSA_RFC6979() generate a random value.
+	virtual bool IsProbabilistic() const
+		{ return true; }
+
+	//! Calculate or generate K for signers
+	//! \param rng Random number generator
+	//! \param params Group parameters
+	//! \param privateKey Private exponent
+	//! \param encodedMsg Encoded message, which is likely different than <tt>H(m)</tt>
+	//! \param encodedMsgLen Encoded message length, which is likely different than <tt>H(m)</tt>
+	//! \param k Calculated or generated value used during signing
+	//! \details ComputeK() was added to DL_ElgamalLikeSignatureAlgorithm() to support RFC 6979 deterministic signatures.
+	//!   If IsProbabilistic() returns <tt>true</tt>, then the default implementation provides a <tt>k</tt> which is
+	//!   uniformly random over <tt>[1, q-1]</tt>. If IsProbabilistic() returns <tt>false</tt>, then ComputeK() is
+	//!   called so a derived class, like DL_Algorithm_DSA_RFC6979(), can calculate the value for <tt>k</tt>.
+	virtual void ComputeK(RandomNumberGenerator &rng, const DL_GroupParameters<T> &params, const Integer &privateKey, const byte* encodedMsg, size_t encodedMsgLen, Integer &k) const
+		{k.Randomize(rng, Integer::One(), params.GetSubgroupOrder()-1);}
+
+	//! Determine length of R
 	virtual size_t RLen(const DL_GroupParameters<T> &params) const
 		{return params.GetSubgroupOrder().ByteCount();}
+
+	//! Determine length of S
 	virtual size_t SLen(const DL_GroupParameters<T> &params) const
 		{return params.GetSubgroupOrder().ByteCount();}
 };
 
 //! \brief Interface for DL key agreement algorithms
+//! \tparam T Field element
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_KeyAgreementAlgorithm
 {
@@ -1331,6 +1404,7 @@ public:
 };
 
 //! \brief Interface for key derivation algorithms used in DL cryptosystems
+//! \tparam T Field element
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_KeyDerivationAlgorithm
 {
@@ -1361,7 +1435,7 @@ public:
 	virtual DecodingResult SymmetricDecrypt(const byte *key, const byte *ciphertext, size_t ciphertextLength, byte *plaintext, const NameValuePairs &parameters) const =0;
 };
 
-//! \brief Discrete Log (DL) base interface
+//! \brief Discrete log base interface
 //! \tparam KI public or private key interface
 template <class KI>
 class CRYPTOPP_NO_VTABLE DL_Base
@@ -1381,7 +1455,7 @@ protected:
 	virtual const KeyInterface & GetKeyInterface() const =0;
 };
 
-//! \brief Discrete Log (DL) signature scheme base implementation
+//! \brief Discrete log signature scheme base implementation
 //! \tparam INTERFACE PK_Signer or PK_Verifier derived class
 //! \tparam DL_Base key base used in the scheme
 //! \details DL_SignatureSchemeBase provides common functions for signers and verifiers.
@@ -1440,8 +1514,8 @@ protected:
 	virtual size_t GetDigestSize() const =0;
 };
 
-//! \brief Discrete Log (DL) signature scheme signer base implementation
-//! \tparam T
+//! \brief Discrete log signature scheme signer base implementation
+//! \tparam T Field element
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_SignerBase : public DL_SignatureSchemeBase<PK_Signer, DL_PrivateKey<T> >
 {
@@ -1480,12 +1554,13 @@ public:
 		this->GetMaterial().DoQuickSanityCheck();
 
 		PK_MessageAccumulatorBase &ma = static_cast<PK_MessageAccumulatorBase &>(messageAccumulator);
+		const PK_SignatureMessageEncodingMethod &mem = this->GetMessageEncodingInterface();
 		const DL_ElgamalLikeSignatureAlgorithm<T> &alg = this->GetSignatureAlgorithm();
 		const DL_GroupParameters<T> &params = this->GetAbstractGroupParameters();
 		const DL_PrivateKey<T> &key = this->GetKeyInterface();
 
 		SecByteBlock representative(this->MessageRepresentativeLength());
-		this->GetMessageEncodingInterface().ComputeMessageRepresentative(
+		mem.ComputeMessageRepresentative(
 			rng,
 			ma.m_recoverableMessage, ma.m_recoverableMessage.size(),
 			ma.AccessHash(), this->GetHashIdentifier(), ma.m_empty,
@@ -1493,129 +1568,39 @@ public:
 		ma.m_empty = true;
 		Integer e(representative, representative.size());
 
-		// hash message digest into random number k to prevent reusing the same k on a different messages
-		// after virtual machine rollback
-		if (rng.CanIncorporateEntropy())
-			rng.IncorporateEntropy(representative, representative.size());
-		Integer k(rng, 1, params.GetSubgroupOrder()-1);
+		Integer k;
+		if (alg.IsProbabilistic())
+		{
+			// hash message digest into random number k to prevent reusing the same k
+			// on a different messages after virtual machine rollback
+			if (rng.CanIncorporateEntropy())
+				rng.IncorporateEntropy(representative, representative.size());
+			k.Randomize(rng, Integer::One(), params.GetSubgroupOrder()-1);
+		}
+		else
+		{
+			alg.ComputeK(NullRNG(), params, key.GetPrivateExponent(), representative, representative.size(), k);
+		}
+
 		Integer r, s;
 		r = params.ConvertElementToInteger(params.ExponentiateBase(k));
 		alg.Sign(params, key.GetPrivateExponent(), k, e, r, s);
 
-		/*
+#if 0
 		Integer r, s;
 		if (this->MaxRecoverableLength() > 0)
 			r.Decode(ma.m_semisignature, ma.m_semisignature.size());
 		else
 			r.Decode(ma.m_presignature, ma.m_presignature.size());
 		alg.Sign(params, key.GetPrivateExponent(), ma.m_k, e, r, s);
-		*/
-
-		size_t rLen = alg.RLen(params);
-		r.Encode(signature, rLen);
-		s.Encode(signature+rLen, alg.SLen(params));
-
-		if (restart)
-			RestartMessageAccumulator(rng, ma);
-
-		return this->SignatureLength();
-	}
-
-protected:
-	void RestartMessageAccumulator(RandomNumberGenerator &rng, PK_MessageAccumulatorBase &ma) const
-	{
-		// k needs to be generated before hashing for signature schemes with recovery
-		// but to defend against VM rollbacks we need to generate k after hashing.
-		// so this code is commented out, since no DL-based signature scheme with recovery
-		// has been implemented in Crypto++ anyway
-		/*
-		const DL_ElgamalLikeSignatureAlgorithm<T> &alg = this->GetSignatureAlgorithm();
-		const DL_GroupParameters<T> &params = this->GetAbstractGroupParameters();
-		ma.m_k.Randomize(rng, 1, params.GetSubgroupOrder()-1);
-		ma.m_presignature.New(params.GetEncodedElementSize(false));
-		params.ConvertElementToInteger(params.ExponentiateBase(ma.m_k)).Encode(ma.m_presignature, ma.m_presignature.size());
-		*/
-		CRYPTOPP_UNUSED(rng); CRYPTOPP_UNUSED(ma);
-	}
-};
-
-//! \brief Discrete Log (DL) signature scheme signer base implementation
-//! \tparam T
-template <class T>
-class CRYPTOPP_NO_VTABLE DL_DeterministicSignerBase : public DL_SignatureSchemeBase<PK_Signer, DL_PrivateKey<T> >
-{
-public:
-#ifndef CRYPTOPP_MAINTAIN_BACKWARDS_COMPATIBILITY_562
-	virtual ~DL_DeterministicSignerBase() { }
 #endif
 
-	//! \brief Testing interface
-	//! \param k Integer
-	//! \param e Integer
-	//! \param r Integer
-	//! \param s Integer
-	void RawSign(const Integer &k, const Integer &e, Integer &r, Integer &s) const
-	{
-		const DL_ElgamalLikeSignatureAlgorithm<T> &alg = this->GetSignatureAlgorithm();
-		const DL_GroupParameters<T> &params = this->GetAbstractGroupParameters();
-		const DL_PrivateKey<T> &key = this->GetKeyInterface();
-
-		r = params.ConvertElementToInteger(params.ExponentiateBase(k));
-		alg.Sign(params, key.GetPrivateExponent(), k, e, r, s);
-	}
-
-	void InputRecoverableMessage(PK_MessageAccumulator &messageAccumulator, const byte *recoverableMessage, size_t recoverableMessageLength) const
-	{
-		PK_MessageAccumulatorBase &ma = static_cast<PK_MessageAccumulatorBase &>(messageAccumulator);
-		ma.m_recoverableMessage.Assign(recoverableMessage, recoverableMessageLength);
-		this->GetMessageEncodingInterface().ProcessRecoverableMessage(ma.AccessHash(),
-			recoverableMessage, recoverableMessageLength,
-			ma.m_presignature, ma.m_presignature.size(),
-			ma.m_semisignature);
-	}
-
-	size_t SignAndRestart(RandomNumberGenerator &rng, PK_MessageAccumulator &messageAccumulator, byte *signature, bool restart) const
-	{
-		this->GetMaterial().DoQuickSanityCheck();
-
-		PK_MessageAccumulatorBase &ma = static_cast<PK_MessageAccumulatorBase &>(messageAccumulator);
-		const DL_ElgamalLikeSignatureAlgorithm<T> &alg = this->GetSignatureAlgorithm();
-		const DL_GroupParameters<T> &params = this->GetAbstractGroupParameters();
-		const DL_PrivateKey<T> &key = this->GetKeyInterface();
-
-		SecByteBlock representative(this->MessageRepresentativeLength());
-		this->GetMessageEncodingInterface().ComputeMessageRepresentative(
-			rng,
-			ma.m_recoverableMessage, ma.m_recoverableMessage.size(),
-			ma.AccessHash(), this->GetHashIdentifier(), ma.m_empty,
-			representative, this->MessageRepresentativeBitLength());
-		ma.m_empty = true;
-		Integer e(representative, representative.size());
-
-		// hash message digest into random number k to prevent reusing the same k on a different messages
-		// after virtual machine rollback
-		if (rng.CanIncorporateEntropy())
-			rng.IncorporateEntropy(representative, representative.size());
-		Integer k(rng, 1, params.GetSubgroupOrder()-1);
-		Integer r, s;
-		r = params.ConvertElementToInteger(params.ExponentiateBase(k));
-		alg.Sign(params, key.GetPrivateExponent(), k, e, r, s);
-
-		/*
-		Integer r, s;
-		if (this->MaxRecoverableLength() > 0)
-			r.Decode(ma.m_semisignature, ma.m_semisignature.size());
-		else
-			r.Decode(ma.m_presignature, ma.m_presignature.size());
-		alg.Sign(params, key.GetPrivateExponent(), ma.m_k, e, r, s);
-		*/
-
 		size_t rLen = alg.RLen(params);
 		r.Encode(signature, rLen);
 		s.Encode(signature+rLen, alg.SLen(params));
 
 		if (restart)
-			RestartMessageAccumulator(rng, ma);
+			this->RestartMessageAccumulator(rng, ma);
 
 		return this->SignatureLength();
 	}
@@ -1638,7 +1623,8 @@ protected:
 	}
 };
 
-//! _
+//! \brief Discrete log signature scheme verifier base implementation
+//! \tparam T Field element
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_VerifierBase : public DL_SignatureSchemeBase<PK_Verifier, DL_PublicKey<T> >
 {
@@ -1711,7 +1697,7 @@ public:
 	}
 };
 
-//! \brief Discrete Log (DL) cryptosystem base implementation
+//! \brief Discrete log cryptosystem base implementation
 //! \tparam PK field element type
 //! \tparam KI public or private key interface
 template <class PK, class KI>
@@ -1745,7 +1731,7 @@ protected:
 	virtual const DL_SymmetricEncryptionAlgorithm & GetSymmetricEncryptionAlgorithm() const =0;
 };
 
-//! \brief Discrete Log (DL) decryptor base implementation
+//! \brief Discrete log decryptor base implementation
 //! \tparam T field element type
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_DecryptorBase : public DL_CryptoSystemBase<PK_Decryptor, DL_PrivateKey<T> >
@@ -1787,7 +1773,7 @@ public:
 	}
 };
 
-//! \brief Discrete Log (DL) encryptor base implementation
+//! \brief Discrete log encryptor base implementation
 //! \tparam T field element type
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_EncryptorBase : public DL_CryptoSystemBase<PK_Encryptor, DL_PublicKey<T> >
@@ -1822,7 +1808,7 @@ public:
 	}
 };
 
-//! \brief Discrete Log (DL) scheme options
+//! \brief Discrete log scheme options
 //! \tparam T1 algorithm information
 //! \tparam T2 group paramters for the scheme
 template <class T1, class T2>
@@ -1833,7 +1819,7 @@ struct DL_SchemeOptionsBase
 	typedef typename GroupParameters::Element Element;
 };
 
-//! \brief Discrete Log (DL) key options
+//! \brief Discrete log key options
 //! \tparam T1 algorithm information
 //! \tparam T2 keys used in the scheme
 template <class T1, class T2>
@@ -1844,7 +1830,7 @@ struct DL_KeyedSchemeOptions : public DL_SchemeOptionsBase<T1, typename T2::Publ
 	typedef typename Keys::PublicKey PublicKey;
 };
 
-//! \brief Discrete Log (DL) signature scheme options
+//! \brief Discrete log signature scheme options
 //! \tparam T1 algorithm information
 //! \tparam T2 keys used in the scheme
 //! \tparam T3 signature algorithm
@@ -1858,7 +1844,7 @@ struct DL_SignatureSchemeOptions : public DL_KeyedSchemeOptions<T1, T2>
 	typedef T5 HashFunction;
 };
 
-//! \brief Discrete Log (DL) crypto scheme options
+//! \brief Discrete log crypto scheme options
 //! \tparam T1 algorithm information
 //! \tparam T2 keys used in the scheme
 //! \tparam T3 key agreement algorithm
@@ -1872,7 +1858,7 @@ struct DL_CryptoSchemeOptions : public DL_KeyedSchemeOptions<T1, T2>
 	typedef T5 SymmetricEncryptionAlgorithm;
 };
 
-//! \brief Discrete Log (DL) base object implementation
+//! \brief Discrete log base object implementation
 //! \tparam BASE TODO
 //! \tparam SCHEME_OPTIONS options for the scheme
 //! \tparam KEY key used in the scheme
@@ -1914,7 +1900,7 @@ private:
 	KEY m_key;
 };
 
-//! \brief Discrete Log (DL) object implementation
+//! \brief Discrete log object implementation
 //! \tparam BASE TODO
 //! \tparam SCHEME_OPTIONS options for the scheme
 //! \tparam KEY key used in the scheme
@@ -1943,7 +1929,7 @@ protected:
 		{return Singleton<CPP_TYPENAME SCHEME_OPTIONS::MessageEncodingMethod>().Ref();}
 };
 
-//! \brief Discrete Log (DL) signer implementation
+//! \brief Discrete log signer implementation
 //! \tparam SCHEME_OPTIONS options for the scheme
 template <class SCHEME_OPTIONS>
 class DL_SignerImpl : public DL_ObjectImpl<DL_SignerBase<typename SCHEME_OPTIONS::Element>, SCHEME_OPTIONS, typename SCHEME_OPTIONS::PrivateKey>
@@ -1957,7 +1943,7 @@ public:
 	}
 };
 
-//! \brief Discrete Log (DL) verifier implementation
+//! \brief Discrete log verifier implementation
 //! \tparam SCHEME_OPTIONS options for the scheme
 template <class SCHEME_OPTIONS>
 class DL_VerifierImpl : public DL_ObjectImpl<DL_VerifierBase<typename SCHEME_OPTIONS::Element>, SCHEME_OPTIONS, typename SCHEME_OPTIONS::PublicKey>
@@ -1969,14 +1955,14 @@ public:
 	}
 };
 
-//! \brief Discrete Log (DL) encryptor implementation
+//! \brief Discrete log encryptor implementation
 //! \tparam SCHEME_OPTIONS options for the scheme
 template <class SCHEME_OPTIONS>
 class DL_EncryptorImpl : public DL_ObjectImpl<DL_EncryptorBase<typename SCHEME_OPTIONS::Element>, SCHEME_OPTIONS, typename SCHEME_OPTIONS::PublicKey>
 {
 };
 
-//! \brief Discrete Log (DL) decryptor implementation
+//! \brief Discrete log decryptor implementation
 //! \tparam SCHEME_OPTIONS options for the scheme
 template <class SCHEME_OPTIONS>
 class DL_DecryptorImpl : public DL_ObjectImpl<DL_DecryptorBase<typename SCHEME_OPTIONS::Element>, SCHEME_OPTIONS, typename SCHEME_OPTIONS::PrivateKey>
@@ -1985,7 +1971,7 @@ class DL_DecryptorImpl : public DL_ObjectImpl<DL_DecryptorBase<typename SCHEME_O
 
 // ********************************************************
 
-//! \brief Discrete Log (DL) simple key agreement base implementation
+//! \brief Discrete log simple key agreement base implementation
 //! \tparam T class or type
 template <class T>
 class CRYPTOPP_NO_VTABLE DL_SimpleKeyAgreementDomainBase : public SimpleKeyAgreementDomain
@@ -2296,7 +2282,7 @@ public:
 };
 
 //! \class DL_SS
-//! \brief Discrete Log (DL) signature scheme
+//! \brief Discrete log signature scheme
 //! \tparam KEYS keys used in the signature scheme
 //! \tparam SA signature algorithm
 //! \tparam MEM message encoding method
@@ -2319,7 +2305,7 @@ public:
 	typedef PK_FinalTemplate<DL_VerifierImpl<SchemeOptions> > Verifier;
 };
 
-//! \brief Discrete Log (DL) encryption scheme
+//! \brief Discrete log encryption scheme
 //! \tparam KEYS keys used in the encryption scheme
 //! \tparam AA key agreement algorithm
 //! \tparam DA key derivation algorithm
