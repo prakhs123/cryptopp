@@ -220,7 +220,7 @@ public:
 //! \brief DSA algorithm providing determinisitic signatures
 //! \tparam T Field element
 //! \tparam H Hash function
-//! \detailsDL_Algorithm_DSA_RFC6979() uses IETF's algorithm, and StaticAlgorithmName() returns the string "DSA-RFC6979".
+//! \details DL_Algorithm_DSA_RFC6979() uses IETF's algorithm, and StaticAlgorithmName() returns the string "DSA-RFC6979".
 //! \sa <A HREF="http://tools.ietf.org/html/rfc6979">RFC 6979, Deterministic Usage of the Digital Signature Algorithm (DSA) and Elliptic Curve Digital Signature Algorithm (ECDSA)</A>
 template <class T, class H>
 class DL_Algorithm_DSA_RFC6979 : public DL_ElgamalLikeSignatureAlgorithm<T>

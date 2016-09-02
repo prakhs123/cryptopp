@@ -1358,10 +1358,10 @@ public:
 	}
 
 	//! \brief Determinmine randomness of k
-	//! \returns <tt>true</tt> if <tt>k</tt> uniformly random over <tt>[1, q-1]</tt>, false otherwise
-	//! \details IsProbabilistic() was added to DL_ElgamalLikeSignatureAlgorithm() to support RFC 6979 deterministic signatures.
-	//!   All derived classes except DL_Algorithm_DSA_RFC6979() generate a random value.
-	virtual bool IsProbabilistic() const
+	//! \returns <tt>true</tt> if <tt>k</tt> is uniformly random over <tt>[1, q-1]</tt>, false otherwise
+	//! \details IsRandomK() was added to DL_ElgamalLikeSignatureAlgorithm() to support RFC 6979 deterministic signatures.
+	//!   All derived classes except DL_Algorithm_DSA_RFC6979() use a random <tt>k</tt>.
+	virtual bool IsRandomK() const
 		{ return true; }
 
 	//! Calculate or generate K for signers
@@ -1569,7 +1569,7 @@ public:
 		Integer e(representative, representative.size());
 
 		Integer k;
-		if (alg.IsProbabilistic())
+		if (alg.IsRandomK())
 		{
 			// hash message digest into random number k to prevent reusing the same k
 			// on a different messages after virtual machine rollback
