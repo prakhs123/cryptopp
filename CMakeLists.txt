@@ -1,8 +1,8 @@
 # Please ensure your changes or patch meets minimum requirements.
-#   The minimum requirements are below, and they are 2.8.5. Please
-#   do not check in something for 2.8.12. To test your changes,
-#   please set up a Ubuntu 12.04 LTS system. Then, manually install
-#   Cmake 2.8.5 from http://cmake.org/Wiki/CMake_Released_Versions.
+#   The minimum requirements are 2.8.5. They roughly equate to Ubuntu 12.04 LTS
+#   Please do not check in something for 2.8.12 or 3.5.0. To test your changes,
+#   please set up a Ubuntu 12.04 LTS system. Then, manually install Cmake 2.8.5
+#   from http://cmake.org/Wiki/CMake_Released_Versions.
 
 cmake_minimum_required(VERSION 2.8.5 FATAL_ERROR)
 
@@ -32,6 +32,9 @@ set(CRYPTOPP_DATA_DIR "" CACHE PATH "Crypto++ test data directory")
 #============================================================================
 # Internal compiler options
 #============================================================================
+
+# Stop hiding the damn output...
+set(CMAKE_VERBOSE_MAKEFILE on)
 
 # Don't use RPATH's. The resulting binary could fail a security audit.
 if (NOT CMAKE_VERSION VERSION_LESS 2.8.12)
@@ -63,11 +66,110 @@ if(NOT CRYPTOPP_DATA_DIR STREQUAL "")
 	add_definitions(-DCRYPTOPP_DATA_DIR="${CRYPTOPP_DATA_DIR}")
 endif()
 
+# We need the output 'uname -s' for Unix and Linux system detection
+set (UNAME_CMD "uname")
+set (UNAME_ARG "-s")
+execute_process(COMMAND ${UNAME_CMD} ${UNAME_ARG}
+	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+	RESULT_VARIABLE UNAME_RESULT
+	OUTPUT_VARIABLE UNAME_SYSTEM)
+string(REGEX REPLACE "\n$" "" UNAME_SYSTEM "${UNAME_SYSTEM}")
+
+# We need the output 'uname -m' for Unix and Linux platform detection
+set (UNAME_CMD "uname")
+set (UNAME_ARG "-m")
+execute_process(COMMAND ${UNAME_CMD} ${UNAME_ARG}
+	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+	RESULT_VARIABLE UNAME_RESULT
+	OUTPUT_VARIABLE UNAME_MACHINE)
+string(REGEX REPLACE "\n$" "" UNAME_MACHINE "${UNAME_MACHINE}")
+
 if(WINDOWS_STORE OR WINDOWS_PHONE)
 	if("${CMAKE_SYSTEM_VERSION}" MATCHES "10\\.0.*")
 		SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} /D\"_WIN32_WINNT=0x0A00\"" )
 	endif()
 	SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} /FI\"winapifamily.h\"" )
+endif()
+
+# Enable PIC for all targets except Windows and 32-bit x86.
+#   Avoid on 32-bit x86 due to register pressures.
+if (NOT (WINDOWS OR WINDOWS_STORE OR WINDOWS_PHONE))
+	# Use Regex; match i386, i486, i586 and i686
+	if (NOT (${UNAME_MACHINE} MATCHES "i.86"))
+		# message(STATUS "Setting -fPIC for machine ${UNAME_MACHINE}")
+		if (CMAKE_VERSION VERSION_LESS 2.8.12)
+			add_definitions(-fPIC)
+		else()
+			add_compile_options(-fPIC)
+		endif()
+	endif()
+endif()
+
+# -march=native for GCC, Clang and ICC on i386 and x86_64.
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
+	if (("${UNAME_MACHINE}" MATCHES "i.86") OR ("${UNAME_MACHINE}" STREQUAL "x86_64") OR ("${UNAME_MACHINE}" STREQUAL "i86pc"))
+			message(STATUS, "3")
+		if (CMAKE_VERSION VERSION_LESS 2.8.12)
+			add_definitions(-march=native)
+		else()
+			add_compile_options(-march=native)
+		endif()
+	endif()
+endif()
+
+# Solaris specific 
+if ("${UNAME_SYSTEM}" STREQUAL "SunOS")
+
+	# SunCC needs -native
+	if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "SunPro")
+		if (CMAKE_VERSION VERSION_LESS 2.8.12)
+			add_definitions(-native)
+		else()
+			add_compile_options(-native)
+		endif()
+	endif()
+
+	# Determine 32-bit vs 64-bit
+	set (ISA_CMD "isainfo")
+	set (ISA_ARG "-b")
+	execute_process(COMMAND ${ISA_CMD} ${ISA_ARG}
+		WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+		RESULT_VARIABLE ISA_RESULT
+		OUTPUT_VARIABLE ISA_INFO)
+	string(REGEX REPLACE "\n$" "" ISA_INFO "${ISA_INFO}")
+
+	# Set 64-bit or 32-bit
+	if ("${ISA_INFO}" STREQUAL "64")
+		if (CMAKE_VERSION VERSION_LESS 2.8.12)
+			add_definitions(-m64)
+		else()
+			add_compile_options(-m64)
+		endif()
+	else()
+		if (CMAKE_VERSION VERSION_LESS 2.8.12)
+			add_definitions(-m32)
+		else()
+			add_compile_options(-m32)
+		endif()
+	endif()
+
+	# GCC needs to enable use of '/'
+	if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+		if (CMAKE_VERSION VERSION_LESS 2.8.12)
+			add_definitions(-Wa,--divide)
+		else()
+			add_compile_options(-Wa,--divide)
+		endif()
+	endif()
+
+	# SunCC needs -native
+	if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "SunPro")
+		if (CMAKE_VERSION VERSION_LESS 2.8.12)
+			add_definitions(-template=no%extdef)
+		else()
+			add_compile_options(-template=no%extdef)
+		endif()
+	endif()
 endif()
 
 #============================================================================
@@ -85,6 +187,7 @@ file(GLOB cryptopp_SOURCES *.cpp)
 list(REMOVE_ITEM cryptopp_SOURCES
 		${CMAKE_CURRENT_SOURCE_DIR}/cryptlib.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/cpu.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/integer.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/pch.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/simple.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/winpipes.cpp
@@ -94,6 +197,7 @@ list(REMOVE_ITEM cryptopp_SOURCES
 set(cryptopp_SOURCES
 		${CMAKE_CURRENT_SOURCE_DIR}/cryptlib.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/cpu.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/integer.cpp
 		${cryptopp_SOURCES}
 		)
 
@@ -158,32 +262,6 @@ if (BUILD_SHARED)
 	endif()
 endif()
 
-# Set PIC
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-	# Enables -fPIC on all 64-bit platforms
-	if(NOT CMAKE_VERSION VERSION_LESS 2.8.9)	# POSITION_INDEPENDENT_CODE support
-		set_target_properties(cryptopp-object PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
-	elseif(NOT CMAKE_VERSION VERSION_LESS 2.8.8)	# Object library support
-		get_target_property(flags_old cryptopp-object COMPILE_FLAGS)
-		set_target_properties(cryptopp-object PROPERTIES COMPILE_FLAGS "${flags_old} -fPIC")
-	else()
-		if (BUILD_STATIC)
-			get_target_property(flags_old_static cryptopp-static COMPILE_FLAGS)
-			if(NOT flags_old_static)
-				set(flags_old_static "")
-			endif()
-			set_target_properties(cryptopp-static PROPERTIES COMPILE_FLAGS "${flags_old_static} -fPIC")
-		endif()
-		if (BUILD_SHARED)
-			get_target_property(flags_old_shared cryptopp-shared COMPILE_FLAGS)
-			if(NOT flags_old_shared)
-				set(flags_old_shared "")
-			endif()
-			set_target_properties(cryptopp-shared PROPERTIES COMPILE_FLAGS "${flags_old_shared} -fPIC")
-		endif()
-	endif()
-endif()
-
 # Set filenames for targets to be "cryptopp"
 if(NOT MSVC)
 	set(COMPAT_VERSION ${cryptopp_VERSION_MAJOR}.${cryptopp_VERSION_MINOR})
@@ -225,7 +303,7 @@ if(WIN32)
 endif()
 
 # This may need to be expanded to "Solaris"
-if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "SunPro")
+if ("${UNAME_SYSTEM}" STREQUAL "SunOS")
 	if (BUILD_STATIC)
 		target_link_libraries(cryptopp-static nsl socket)
 	endif()
@@ -335,4 +413,12 @@ endif()
 # Documentation
 if(BUILD_DOCUMENTATION)
 	install(DIRECTORY "${out_source_DOCS_DIR}" DESTINATION ${CMAKE_INSTALL_DOCDIR})
+endif()
+
+# Print a summary
+if (NOT CMAKE_VERSION VERSION_LESS 3.0.0)
+	include(FeatureSummary)
+	feature_summary(WHAT ALL
+		VAR cryptoppFeatures)
+        message(STATUS "${cryptoppFeatures}")
 endif()
