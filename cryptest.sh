@@ -857,8 +857,8 @@ if [[ (-e "/proc/cpuinfo") && (-e "/proc/meminfo") ]]; then
 	MEM_SIZE=$(cat /proc/meminfo | "$GREP" "MemTotal" | "$AWK" '{print $2}')
 	MEM_SIZE=$(($MEM_SIZE/1024))
 elif [[ "$IS_DARWIN" -ne "0" ]]; then
-	CPU_COUNT=$(sysctl -a 2>/dev/null | "$GREP" 'hw.availcpu' | "$AWK" '{print $3; exit}')
-	MEM_SIZE=$(sysctl -a 2>/dev/null | "$GREP" 'hw.memsize' | "$AWK" '{print $3; exit;}')
+	CPU_COUNT=$(sysctl -a 2>&1 | "$GREP" 'hw.availcpu' | "$AWK" '{print $3; exit}')
+	MEM_SIZE=$(sysctl -a 2>&1 | "$GREP" 'hw.memsize' | "$AWK" '{print $3; exit;}')
 	MEM_SIZE=$(($MEM_SIZE/1024/1024))
 elif [[ "$IS_SOLARIS" -ne "0" ]]; then
 	CPU_COUNT=$(psrinfo 2>/dev/null | wc -l | "$AWK" '{print $1}')
@@ -875,7 +875,7 @@ elif [[ (-e "/proc/cpuinfo") ]]; then
 	if [[ -z "$CPU_FREQ" ]]; then CPU_FREQ=512; fi
 	CPU_FREQ=$("$AWK" "BEGIN {print $CPU_FREQ/1024}")
 elif [[ "$IS_DARWIN" -ne "0" ]]; then
-	CPU_FREQ=$(sysctl -a 2>/dev/null | "$GREP" 'hw.cpufrequency' | "$AWK" '{print $3; exit;}')
+	CPU_FREQ=$(sysctl -a 2>&1 | "$GREP" 'hw.cpufrequency' | "$AWK" '{print $3; exit;}')
 	CPU_FREQ=$("$AWK" "BEGIN {print $CPU_FREQ/1024/1024/1024}")
 elif [[ "$IS_SOLARIS" -ne "0" ]]; then
 	CPU_FREQ=$(psrinfo -v 2>/dev/null | "$GREP" 'MHz' | "$AWK" '{print $6; exit;}')
@@ -975,23 +975,30 @@ if [[ ("$IS_X86" -ne "0" || "$IS_X64" -ne "0") && ("$IS_SOLARIS" -ne "0") && ("$
 	SUNCC_XARCH=
 	if [[ ("$SUNCC_511_OR_ABOVE" -ne "0") ]]; then
 		if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "sse2") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__SSE2__"); SUNCC_XARCH=sse2; fi
-			if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "sse3") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__SSE3__"); SUNCC_XARCH=ssse3; fi
-			if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "ssse3") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__SSSE3__"); SUNCC_XARCH=ssse3; fi
-			if [[ ("$SUNCC_512_OR_ABOVE" -ne "0") ]]; then
-				if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "sse4.1") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__SSE4_1__"); SUNCC_XARCH=ssse4_1; fi
-				if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "sse4.2") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__SSE4_2__"); SUNCC_XARCH=ssse4_2; fi
-				if [[ ("$SUNCC_513_OR_ABOVE" -ne "0") ]]; then
-					if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "aes") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__AES__"); SUNCC_XARCH=aes; fi
-					if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "pclmulqdq") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__PCLMUL__"); SUNCC_XARCH=aes; fi
-					if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "rdrand") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__RDRND__"); SUNCC_XARCH=avx_i; fi
-					if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "rdseed") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__RDSEED__"); SUNCC_XARCH=avx_i; fi
-					if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "avx") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__AVX__"); SUNCC_XARCH=avx; fi
-					if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "avx2") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__AVX2__"); SUNCC_XARCH=avx2; fi
-					if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "bmi") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__BMI__"); SUNCC_XARCH=avx2; fi
-					if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "bmi2") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__BMI2__"); SUNCC_XARCH=avx2; fi
+		if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "sse3") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__SSE3__"); SUNCC_XARCH=ssse3; fi
+		if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "ssse3") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__SSSE3__"); SUNCC_XARCH=ssse3; fi
+		if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "sse4.1") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__SSE4_1__"); SUNCC_XARCH=sse4_1; fi
+		if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "sse4.2") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__SSE4_2__"); SUNCC_XARCH=sse4_2; fi
+
+		# This should use SUNCC_512_OR_ABOVE, but SunCC 5.12 crashes with -xarch=aes.
+		if [[ ("$SUNCC_513_OR_ABOVE" -ne "0") ]]; then
+			if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "aes") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__AES__"); SUNCC_XARCH=aes; fi
+			if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "pclmulqdq") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__PCLMUL__"); SUNCC_XARCH=aes; fi
+
+			if [[ ("$SUNCC_513_OR_ABOVE" -ne "0") ]]; then
+				if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "rdrand") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__RDRND__"); SUNCC_XARCH=avx_i; fi
+				if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "rdseed") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__RDSEED__"); SUNCC_XARCH=avx_i; fi
+				if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "avx") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__AVX__"); SUNCC_XARCH=avx; fi
+				if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "avx2") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__AVX2__"); SUNCC_XARCH=avx2; fi
+				if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "bmi") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__BMI__"); SUNCC_XARCH=avx2; fi
+				if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "bmi2") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__BMI2__"); SUNCC_XARCH=avx2; fi
+
+				# SunCC 5.13 and "illegal use of -xarch option, illegal value ignored: avx2_i"
+				if [[ ("$SUNCC_514_OR_ABOVE" -ne "0") ]]; then
 					if [[ ($(echo -n "$X86_CPU_FLAGS" | "$GREP" -c "adx") -ne "0") ]]; then PLATFORM_CXXFLAGS+=("-D__ADX__"); SUNCC_XARCH=avx2_i; fi
 				fi
 			fi
+		fi
 	fi
 	PLATFORM_CXXFLAGS+=("-xarch=$SUNCC_XARCH")
 fi
@@ -3503,24 +3510,32 @@ if [[ "$IS_SOLARIS" -ne "0" ]]; then
 		SUNCC_CXXFLAGS="${PLATFORM_CXXFLAGS[@]}"
 	fi
 
-	# Sun Studio 12.3 and below workaround, http://github.com/weidai11/cryptopp/issues/228
-	SUNCC_SSE_CXXFLAGS=$(echo -n "${SUNCC_CXXFLAGS[@]}" | "$AWK" '/SSE/' ORS=' ' RS=' ')
-
 	############################################
-	# Sun Studio 12.2
+	# Sun Studio 12.2/SunCC 5.11
 	if [[ (-e "/opt/solstudio12.2/bin/CC") ]]; then
+
+		# More workarounds... SunCC 5.11 only does SSSE3, http://github.com/weidai11/cryptopp/issues/228
+		SUNCC_SSE_CXXFLAGS=$(echo -n "${SUNCC_CXXFLAGS[@]}" | "$AWK" '/__(SSE2|SSE3|SSSE3)__/' ORS=' ' RS=' ')
+
+		if [[ $(echo -n "$SUNCC_SSE_CXXFLAGS" | "$GREP" -i -c "ssse3") != "0" ]]; then
+			SUNCC_SSE_CXXFLAGS="$SUNCC_SSE_CXXFLAGS -xarch=ssse3";
+		elif [[ $(echo -n "$SUNCC_SSE_CXXFLAGS" | "$GREP" -i -c "sse3") != "0" ]]; then
+			SUNCC_SSE_CXXFLAGS="$SUNCC_SSE_CXXFLAGS -xarch=sse3";
+		else
+			SUNCC_SSE_CXXFLAGS="$SUNCC_SSE_CXXFLAGS -xarch=sse2";
+		fi
 
 		############################################
 		# Debug build
 		echo
 		echo "************************************" | tee -a "$TEST_RESULTS"
-		echo "Testing: Sun Studio 12.2, debug, default CXXFLAGS" | tee -a "$TEST_RESULTS"
+		echo "Testing: Sun Studio 12.2, debug, platform CXXFLAGS" | tee -a "$TEST_RESULTS"
 		echo
 
 		"$MAKE" clean > /dev/null 2>&1
 		rm -f adhoc.cpp > /dev/null 2>&1
 
-		CXXFLAGS="-DDEBUG -g -xO0 ${SUNCC_SSE_CXXFLAGS[@]}"
+		CXXFLAGS="-DDEBUG -g -xO0 $SUNCC_SSE_CXXFLAGS"
 		CXX="/opt/solstudio12.2/bin/CC" CXXFLAGS="$CXXFLAGS" "$MAKE" "${MAKEARGS[@]}" static dynamic cryptest.exe 2>&1 | tee -a "$TEST_RESULTS"
 
 		if [[ ("${PIPESTATUS[0]}" -ne "0") ]]; then
@@ -3540,13 +3555,13 @@ if [[ "$IS_SOLARIS" -ne "0" ]]; then
 		# Release build
 		echo
 		echo "************************************" | tee -a "$TEST_RESULTS"
-		echo "Testing: Sun Studio 12.2, release, default CXXFLAGS" | tee -a "$TEST_RESULTS"
+		echo "Testing: Sun Studio 12.2, release, platform CXXFLAGS" | tee -a "$TEST_RESULTS"
 		echo
 
 		"$MAKE" clean > /dev/null 2>&1
 		rm -f adhoc.cpp > /dev/null 2>&1
 
-		CXXFLAGS="-DNDEBUG -g -xO2 ${SUNCC_SSE_CXXFLAGS[@]}"
+		CXXFLAGS="-DNDEBUG -g -xO2 $SUNCC_SSE_CXXFLAGS"
 		CXX="/opt/solstudio12.2/bin/CC" CXXFLAGS="$CXXFLAGS" "$MAKE" "${MAKEARGS[@]}" static dynamic cryptest.exe 2>&1 | tee -a "$TEST_RESULTS"
 
 		if [[ ("${PIPESTATUS[0]}" -ne "0") ]]; then
@@ -3564,14 +3579,29 @@ if [[ "$IS_SOLARIS" -ne "0" ]]; then
 	fi
 
 	############################################
-	# Sun Studio 12.3
+	# Sun Studio 12.3/SunCC 5.12
 	if [[ (-e "/opt/solarisstudio12.3/bin/CC") ]]; then
+
+		# More workarounds... SunCC 5.12 only does SSE4, http://github.com/weidai11/cryptopp/issues/228
+		SUNCC_SSE_CXXFLAGS=$(echo -n "${SUNCC_CXXFLAGS[@]}" | "$AWK" '/__(SSE2|SSE3|SSSE3|SSE4_1|SSE4_2)__/' ORS=' ' RS=' ')
+
+		if [[ $(echo -n "$SUNCC_SSE_CXXFLAGS" | "$GREP" -i -c "sse4_2") != "0" ]]; then
+			SUNCC_SSE_CXXFLAGS="$SUNCC_SSE_CXXFLAGS -xarch=sse4_2";
+		elif [[ $(echo -n "$SUNCC_SSE_CXXFLAGS" | "$GREP" -i -c "sse4_1") != "0" ]]; then
+			SUNCC_SSE_CXXFLAGS="$SUNCC_SSE_CXXFLAGS -xarch=sse4_1";
+		elif [[ $(echo -n "$SUNCC_SSE_CXXFLAGS" | "$GREP" -i -c "ssse3") != "0" ]]; then
+			SUNCC_SSE_CXXFLAGS="$SUNCC_SSE_CXXFLAGS -xarch=ssse3";
+		elif [[ $(echo -n "$SUNCC_SSE_CXXFLAGS" | "$GREP" -i -c "sse3") != "0" ]]; then
+			SUNCC_SSE_CXXFLAGS="$SUNCC_SSE_CXXFLAGS -xarch=sse3";
+		else
+			SUNCC_SSE_CXXFLAGS="$SUNCC_SSE_CXXFLAGS -xarch=sse2";
+		fi
 
 		############################################
 		# Debug build
 		echo
 		echo "************************************" | tee -a "$TEST_RESULTS"
-		echo "Testing: Sun Studio 12.3, debug, default CXXFLAGS" | tee -a "$TEST_RESULTS"
+		echo "Testing: Sun Studio 12.3, debug, platform CXXFLAGS" | tee -a "$TEST_RESULTS"
 		echo
 
 		"$MAKE" clean > /dev/null 2>&1
@@ -3597,7 +3627,7 @@ if [[ "$IS_SOLARIS" -ne "0" ]]; then
 		# Release build
 		echo
 		echo "************************************" | tee -a "$TEST_RESULTS"
-		echo "Testing: Sun Studio 12.3, release, default CXXFLAGS" | tee -a "$TEST_RESULTS"
+		echo "Testing: Sun Studio 12.3, release, platform CXXFLAGS" | tee -a "$TEST_RESULTS"
 		echo
 
 		"$MAKE" clean > /dev/null 2>&1
@@ -3621,15 +3651,17 @@ if [[ "$IS_SOLARIS" -ne "0" ]]; then
 	fi
 
 	############################################
-	# Sun Studio 12.4
+	# Sun Studio 12.4/SunCC 5.13
 	if [[ (-e "/opt/solarisstudio12.4/bin/CC") ]]; then
 
 		############################################
 		# Debug build
 		echo
 		echo "************************************" | tee -a "$TEST_RESULTS"
-		echo "Testing: Sun Studio 12.4, debug, default CXXFLAGS" | tee -a "$TEST_RESULTS"
+		echo "Testing: Sun Studio 12.4, debug, platform CXXFLAGS" | tee -a "$TEST_RESULTS"
 		echo
+
+		# No workarounds... SunCC 5.13 does AES, PCLMUL, RDRAND, AVX, BMI, ADX...
 
 		"$MAKE" clean > /dev/null 2>&1
 		rm -f adhoc.cpp > /dev/null 2>&1
@@ -3654,7 +3686,7 @@ if [[ "$IS_SOLARIS" -ne "0" ]]; then
 		# Release build
 		echo
 		echo "************************************" | tee -a "$TEST_RESULTS"
-		echo "Testing: Sun Studio 12.4, release, default CXXFLAGS" | tee -a "$TEST_RESULTS"
+		echo "Testing: Sun Studio 12.4, release, platform CXXFLAGS" | tee -a "$TEST_RESULTS"
 		echo
 
 		"$MAKE" clean > /dev/null 2>&1
@@ -3678,15 +3710,17 @@ if [[ "$IS_SOLARIS" -ne "0" ]]; then
 	fi
 
 	############################################
-	# Sun Studio 12.5
+	# Sun Studio 12.5/SunCC 5.14
 	if [[ (-e "/opt/developerstudio12.5/bin/CC") ]]; then
 
 		############################################
 		# Debug build
 		echo
 		echo "************************************" | tee -a "$TEST_RESULTS"
-		echo "Testing: Sun Studio 12.5, debug, default CXXFLAGS" | tee -a "$TEST_RESULTS"
+		echo "Testing: Sun Studio 12.5, debug, platform CXXFLAGS" | tee -a "$TEST_RESULTS"
 		echo
+
+		# No workarounds... SunCC 5.14 does AES, PCLMUL, RDRAND, AVX, BMI, ADX...
 
 		"$MAKE" clean > /dev/null 2>&1
 		rm -f adhoc.cpp > /dev/null 2>&1
@@ -3711,7 +3745,7 @@ if [[ "$IS_SOLARIS" -ne "0" ]]; then
 		# Release build
 		echo
 		echo "************************************" | tee -a "$TEST_RESULTS"
-		echo "Testing: Sun Studio 12.5, release, default CXXFLAGS" | tee -a "$TEST_RESULTS"
+		echo "Testing: Sun Studio 12.5, release, platform CXXFLAGS" | tee -a "$TEST_RESULTS"
 		echo
 
 		"$MAKE" clean > /dev/null 2>&1
